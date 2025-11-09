@@ -373,7 +373,7 @@ private:
   double supply = 60.0;   // Volts (before transformer)
   double tRise = 3e-9;      // 3ns rise time
   double tFall = 3e-9;      // 3ns fall time
-  double tRatio = 2.35; // Transformer voltage ratio (1:2.35)
+  double tRatio = 2.0;  // Transformer voltage ratio (1:2 for 50:200Ω impedance)
   
 public:
   SquareWaveSource(double supply = 60.0, double tRise = 3e-9, double tFall = 3e-9)
@@ -479,17 +479,6 @@ public:
 
       // Solve filter at this frequency
       auto sol = filter.solve(omegaN, Vsource);
-
-      // Debug output for fundamental
-      if (n == 1) {
-        std::cout << "DEBUG: Vsource = " << Vsource.magnitude()
-                  << " V (peak)" << std::endl;
-        std::cout << "DEBUG: Input power = " << sol.pinput << " W" << std::endl;
-        std::cout << "DEBUG: Output power = " << sol.pfundamental << " W" << std::endl;
-        std::cout << "DEBUG: Filter dissipation = "
-                  << (sol.pC1 + sol.pC2 + sol.pC3 + sol.pL1 + sol.pL2) * 1000.0
-                  << " mW" << std::endl;
-      }
 
       // Accumulate actual input power delivered to filter
       totalInPower += sol.pinput;
@@ -755,10 +744,11 @@ int main() {
   const double ESRbase = 0.125;  // Ohms (C0G at HF)
   const double DCRbase = 0.055;  // Ohms (Coilcraft 132-xx)
   
-  // Square wave source - 49.6V DC supply for 50W output @ 200Ω
-  // Calculation: 50W @ 200Ω → 100V RMS → 141.4V peak (ideal)
-  //              Adjusted for source impedance (0.5Ω) and filter losses
-  SquareWaveSource source(49.6, 3e-9, 3e-9);
+  // Square wave source - 58.3V DC supply for 50W output
+  // Transformer: 50:200Ω (1:2 voltage ratio)
+  // Calculation: 50W @ 200Ω → 100V RMS → 141.4V peak
+  //              58.3V × 2.0 × (4/π) = 148.4V peak
+  SquareWaveSource source(58.3, 3e-9, 3e-9);
   
   // Storage for all results
   std::vector<HarmonicAnalyzer::BandResult> allResults;
