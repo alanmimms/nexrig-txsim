@@ -230,10 +230,10 @@ private:
   
 public:
   struct SolutionPoint {
-    Complex Vinput;
-    Complex Vnode1;  // After C1, before L1
-    Complex Vnode2;  // After L1, before C2
-    Complex Voutput; // After L2 and C3
+    Complex Vinput;  // Source voltage (before source impedance)
+    Complex Vnode1;  // Input node (after source impedance, at C1/L1 junction)
+    Complex Vnode2;  // Middle node (between L1 and L2, at C2 junction)
+    Complex Voutput; // Output node (after L2, at C3/load junction)
     
     Complex Ic1, Ic2, Ic3;
     Complex Il1, Il2;
@@ -261,51 +261,62 @@ public:
     Complex yL1 = L1->admittance(omega);
     Complex yL2 = L2->admittance(omega);
     Complex yload(1.0 / z0, 0.0);
-    
-    // Build 3×3 matrix for nodes 1, 2, 3
-    // Node 1: Vin --[yC1]-- N1 --[yL1]-- N2
-    // Node 2: N1 --[yL1]-- N2 --[yC2 to gnd]-- --[yL2]-- N3
-    // Node 3: N2 --[yL2]-- N3 --[yC3 to gnd]-- --[yload]-- gnd
-    
+    Complex ysource = yload;  // Source impedance = 200Ω (same as load)
+
+    // Build 3×3 matrix for shunt-first topology:
+    // Vsource --[Zsource]-- V0 --+--[L1]--+--[L2]--+-- V2
+    //                             |        |        |
+    //                            C1       C2       C3, Zload
+    //                             |        |        |
+    //                            GND      GND      GND
+    //
+    // V0 = input node voltage (after source impedance)
+    // V1 = middle node voltage (between L1 and L2)
+    // V2 = output node voltage (at load) = Vout
+
     Complex A[4][4] = {Complex(0,0)};
     Complex b[4] = {Complex(0,0)};
     Complex V[4] = {Complex(0,0)};
-    
-    // Node 1 equation: (yC1 + yL1)·V1 - yL1·V2 = yC1·Vin
-    A[0][0] = yC1 + yL1;
+
+    // Node 0 equation (input node after source impedance):
+    // (ysource + yC1 + yL1)·V0 - yL1·V1 = ysource·Vin
+    A[0][0] = ysource + yC1 + yL1;
     A[0][1] = Complex(0,0) - yL1;
     A[0][2] = Complex(0, 0);
-    b[0] = yC1 * Vin;
-    
-    // Node 2 equation: -yL1·V1 + (yL1 + yC2 + yL2)·V2 - yL2·V3 = 0
+    b[0] = ysource * Vin;
+
+    // Node 1 equation (middle node between L1 and L2):
+    // -yL1·V0 + (yL1 + yC2 + yL2)·V1 - yL2·V2 = 0
     A[1][0] = Complex(0,0) - yL1;
     A[1][1] = yL1 + yC2 + yL2;
     A[1][2] = Complex(0,0) - yL2;
     b[1] = Complex(0, 0);
-    
-    // Node 3 equation: -yL2·V2 + (yL2 + yC3 + yload)·V3 = 0
+
+    // Node 2 equation (output node):
+    // -yL2·V1 + (yL2 + yC3 + yload)·V2 = 0
     A[2][0] = Complex(0, 0);
     A[2][1] = Complex(0,0) - yL2;
     A[2][2] = yL2 + yC3 + yload;
     b[2] = Complex(0, 0);
-    
+
     // Solve
     solveLinearSystem(A, b, V, 3);
-    
+
     // Calculate branch currents
     SolutionPoint sol;
     sol.Vinput = Vin;
-    sol.Vnode1 = V[0];
-    sol.Vnode2 = V[1];
-    sol.Voutput = V[2];
-    
-    sol.Ic1 = yC1 * (Vin - V[0]);
-    sol.Ic2 = yC2 * V[1];
-    sol.Ic3 = yC3 * V[2];
-    sol.Il1 = yL1 * (V[0] - V[1]);
-    sol.Il2 = yL2 * (V[1] - V[2]);
-    
-    Complex Iin = yC1 * (Vin - V[0]);  // Input current
+    sol.Vnode1 = V[0];  // Input node voltage (not same as Vin!)
+    sol.Vnode2 = V[1];  // Middle node voltage
+    sol.Voutput = V[2]; // Output node voltage
+
+    // Currents through components (for shunt-first topology):
+    sol.Ic1 = yC1 * V[0];  // C1 shunt current
+    sol.Ic2 = yC2 * V[1];  // C2 shunt current
+    sol.Ic3 = yC3 * V[2];  // C3 shunt current
+    sol.Il1 = yL1 * (V[0] - V[1]);  // L1 series current
+    sol.Il2 = yL2 * (V[1] - V[2]);  // L2 series current
+
+    Complex Iin = ysource * (Vin - V[0]);  // Input current from source
     double Pin = (Vin.magnitude() * Iin.magnitude()) / 2.0;  // Apparent power
     std::cout << "DEBUG: Pin = " << Pin << std::endl;
 
@@ -702,16 +713,17 @@ int main() {
   std::cout << "NexRig LPF Harmonic Analysis" << std::endl;
   std::cout << "========================================\n" << std::endl;
   
-  // Band definitions from LPF_Array_Design_200ohm.md
+  // Band definitions from TX-LPF-ARRAY.md Rev 2.0, Table 3.1
+  // BandFilter(name, fLowMHz, fHighMHz, c1pF, c2pF, c3pF, l1nH, l2nH)
   std::vector<BandFilter> bands = {
-    BandFilter("160m", 1.8, 2.0, 390, 620, 330, 1500, 1300),
-    BandFilter("80m",  3.5, 4.0, 220, 330, 180, 820, 750),
-    BandFilter("60m",  5.3, 5.4, 150, 240, 130, 620, 560),
-    BandFilter("40m",  7.0, 7.3, 120, 180, 100, 470, 430),
-    BandFilter("30m",  10.1, 10.15, 82, 130, 68, 330, 300),
-    BandFilter("20m",  14.0, 14.35, 56, 91, 47, 240, 220),
-    BandFilter("17m/15m", 18.068, 21.45, 39, 66, 33, 180, 160),
-    BandFilter("12m/10m", 24.89, 29.7, 33, 48, 27, 130, 120),
+    BandFilter("160m", 1.8, 2.0, 390, 660, 390, 18000, 18000),  // C2: 2×330pF, L: 18µH
+    BandFilter("80m",  3.5, 4.0, 180, 320, 180, 10000, 10000),  // C2: 2×160pF, L: 10µH
+    BandFilter("60m",  5.3, 5.4, 150, 240, 150, 6800, 6800),    // C2: 2×120pF, L: 6.8µH
+    BandFilter("40m",  7.0, 7.3, 100, 200, 100, 4700, 4700),    // C2: 2×100pF, L: 4.7µH
+    BandFilter("30m",  10.1, 10.15, 82, 136, 82, 3300, 3300),   // C2: 2×68pF, L: 3.3µH
+    BandFilter("20m",  14.0, 14.35, 56, 94, 56, 2200, 2200),    // C2: 2×47pF, L: 2.2µH
+    BandFilter("17m/15m", 18.068, 21.45, 39, 66, 39, 1800, 1800), // C2: 2×33pF, L: 1.8µH
+    BandFilter("12m/10m", 24.89, 29.7, 27, 48, 27, 1500, 1500),   // C2: 2×24pF, L: 1.5µH
   };
   
   // Tolerance corners
