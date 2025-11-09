@@ -305,6 +305,10 @@ public:
     sol.Il1 = yL1 * (V[0] - V[1]);
     sol.Il2 = yL2 * (V[1] - V[2]);
     
+    Complex Iin = yC1 * (Vin - V[0]);  // Input current
+    double Pin = (Vin.magnitude() * Iin.magnitude()) / 2.0;  // Apparent power
+    std::cout << "DEBUG: Pin = " << Pin << std::endl;
+
     // Convert phasor magnitudes to RMS
     double ic1rms = sol.Ic1.magnitude() / std::sqrt(2.0);
     double ic2rms = sol.Ic2.magnitude() / std::sqrt(2.0);
@@ -395,8 +399,8 @@ public:
     std::string cornerName;
     double frequency;
     
-    std::vector<double> harmW;  // Watts at each harmonic
-    std::vector<double> harmdBc;       // dBc relative to fundamental
+    std::vector<double> harmW;	 // Watts at each harmonic
+    std::vector<double> harmdBc; // dBc relative to fundamental
     
     double fundW;
     double totalHarmW;
@@ -441,6 +445,11 @@ public:
       // Get source voltage at this harmonic
       Complex Vsource = source.fourierCoefficient(n, f0);
       
+      if (n == 1) {
+	std::cout << "DEBUG: Vsource = " << Vsource.magnitude() 
+		  << " V (peak)" << std::endl;
+      }
+
       if (Vsource.magnitude() < 1e-6) {
         continue; // Negligible
       }
@@ -477,6 +486,12 @@ public:
       vc1comps.push_back(sol.Vnode1.magnitude());
       vc2comps.push_back(sol.Vnode2.magnitude());
       vc3comps.push_back(sol.Voutput.magnitude());
+
+      if (n == 1) {
+	std::cout << "DEBUG: Voutput = " << sol.Voutput.magnitude() 
+		  << " V (peak)" << std::endl;
+	std::cout << "DEBUG: Power = " << sol.pfundamental << " W" << std::endl;
+      }
     }
     
     // Calculate total RMS currents (RSS sum)
@@ -508,11 +523,11 @@ public:
     result.fundW = result.harmW[1];
     
     for (int n = 2; n <= maxHarm; ++n) {
-      if (result.harmW[n] > 1e-12) {
+      //      if (result.harmW[n] > 1e-12) {
         result.harmdBc[n] = 10.0 * std::log10(
           result.harmW[n] / result.fundW
         );
-      }
+	//      }
     }
     
     // Total harmonic power (exclude fundamental)
@@ -559,18 +574,18 @@ struct BandFilter {
 	     double fLMHz,
 	     double fHMHz,
 	     double c1pF,
-	     double l1nH,
 	     double c2pF,
-	     double l2nH,
-	     double c3pF)
+	     double c3pF,
+	     double l1nH,
+	     double l2nH)
     : name(name),
-      fLow(fLMHz),
-      fHigh(fHMHz),
-      c1(c1pF/1.0e-12),
-      l1(l1nH/1.0e-9),
-      c2(c2pF/1.0e-12),
-      l2(l2nH/1.0e-9),
-      c3(c3pF/1.0e-12)
+      fLow(fLMHz*1.0e6),
+      fHigh(fHMHz*1.0e6),
+      c1(c1pF*1.0e-12),
+      l1(l1nH*1.0e-9),
+      c2(c2pF*1.0e-12),
+      l2(l2nH*1.0e-9),
+      c3(c3pF*1.0e-12)
   { }
 };
 
@@ -689,14 +704,14 @@ int main() {
   
   // Band definitions from LPF_Array_Design_200ohm.md
   std::vector<BandFilter> bands = {
-    BandFilter("160m", 1.8e6, 2.0e6, 390e-12, 620e-12, 330e-12, 1.5e-6, 1.3e-6),
-    BandFilter("80m",  3.5e6, 4.0e6, 220e-12, 330e-12, 180e-12, 820e-9, 750e-9),
-    BandFilter("60m",  5.3e6, 5.4e6, 150e-12, 240e-12, 130e-12, 620e-9, 560e-9),
-    BandFilter("40m",  7.0e6, 7.3e6, 120e-12, 180e-12, 100e-12, 470e-9, 430e-9),
-    BandFilter("30m",  10.1e6, 10.15e6, 82e-12, 130e-12, 68e-12, 330e-9, 300e-9),
-    BandFilter("20m",  14.0e6, 14.35e6, 56e-12, 91e-12, 47e-12, 240e-9, 220e-9),
-    BandFilter("17m/15m", 18.068e6, 21.45e6, 39e-12, 66e-12, 33e-12, 180e-9, 160e-9),
-    BandFilter("12m/10m", 24.89e6, 29.7e6, 33e-12, 48e-12, 27e-12, 130e-9, 120e-9),
+    BandFilter("160m", 1.8, 2.0, 390, 620, 330, 1500, 1300),
+    BandFilter("80m",  3.5, 4.0, 220, 330, 180, 820, 750),
+    BandFilter("60m",  5.3, 5.4, 150, 240, 130, 620, 560),
+    BandFilter("40m",  7.0, 7.3, 120, 180, 100, 470, 430),
+    BandFilter("30m",  10.1, 10.15, 82, 130, 68, 330, 300),
+    BandFilter("20m",  14.0, 14.35, 56, 91, 47, 240, 220),
+    BandFilter("17m/15m", 18.068, 21.45, 39, 66, 33, 180, 160),
+    BandFilter("12m/10m", 24.89, 29.7, 33, 48, 27, 130, 120),
   };
   
   // Tolerance corners
