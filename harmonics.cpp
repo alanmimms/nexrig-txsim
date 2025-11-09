@@ -275,7 +275,9 @@ public:
     Complex yL1 = L1->admittance(omega);
     Complex yL2 = L2->admittance(omega);
     Complex yload(1.0 / z0, 0.0);
-    Complex ysource = yload;  // Source impedance = 200Ω (same as load)
+    // H-bridge + transformer acts as low-impedance voltage source
+    // Source impedance ≈ transformer DCR + FET Rds_on ≈ 0.5Ω
+    Complex ysource(1.0 / 0.5, 0.0);
 
     // Build 3×3 matrix for shunt-first topology:
     // Vsource --[Zsource]-- V0 --+--[L1]--+--[L2]--+-- V2
@@ -753,8 +755,10 @@ int main() {
   const double ESRbase = 0.125;  // Ohms (C0G at HF)
   const double DCRbase = 0.055;  // Ohms (Coilcraft 132-xx)
   
-  // Square wave source
-  SquareWaveSource source(60.0, 3e-9, 3e-9);
+  // Square wave source - 49.6V DC supply for 50W output @ 200Ω
+  // Calculation: 50W @ 200Ω → 100V RMS → 141.4V peak (ideal)
+  //              Adjusted for source impedance (0.5Ω) and filter losses
+  SquareWaveSource source(49.6, 3e-9, 3e-9);
   
   // Storage for all results
   std::vector<HarmonicAnalyzer::BandResult> allResults;
