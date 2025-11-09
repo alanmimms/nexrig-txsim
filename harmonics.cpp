@@ -251,7 +251,8 @@ public:
     Complex Ic1, Ic2, Ic3;
     Complex Il1, Il2;
 
-    double pinput;       // Real power into filter from source
+    double psource;      // DC power from source (includes source impedance loss)
+    double pinput;       // Real power into filter (after source impedance)
     double pfundamental; // Real power delivered to load
     double pC1, pC2, pC3;
     double pL1, pL2;
@@ -345,9 +346,13 @@ public:
     sol.pL1 = L1->powerDissipation(il1rms);
     sol.pL2 = L2->powerDissipation(il2rms);
 
+    // Calculate power from DC source (ham radio convention: DC input power)
+    // This includes power to filter + power dissipated in source impedance
+    Complex Iin = ysource * (Vin - V[0]);  // Input current from source
+    sol.psource = Complex::realPower(Vin, Iin);  // Total power from source
+
     // Calculate real power delivered to the filter input (at node V[0])
     // This is the power that actually enters the filter, after source impedance loss
-    Complex Iin = ysource * (Vin - V[0]);  // Input current from source
     sol.pinput = Complex::realPower(V[0], Iin);  // Power at filter input node
 
     // Calculate real power delivered to load
@@ -456,9 +461,10 @@ public:
     result.bandName = bandName;
     result.cornerName = cornerName;
     result.frequency = f0;
-    
+
     double totalDiss = 0.0;
-    double totalInPower = 0.0;
+    double totalSourcePower = 0.0;  // DC input power (ham radio convention)
+    double totalInPower = 0.0;      // RF power to filter
     
     // Accumulate stress across all harmonics
     std::vector<double> ic1comps, ic2comps, ic3comps;
@@ -480,7 +486,22 @@ public:
       // Solve filter at this frequency
       auto sol = filter.solve(omegaN, Vsource);
 
-      // Accumulate actual input power delivered to filter
+      // Debug output for fundamental
+      if (n == 1) {
+        std::cout << "DEBUG: Vsource = " << Vsource.magnitude()
+                  << " V (peak)" << std::endl;
+        std::cout << "DEBUG: DC input power = " << sol.psource << " W" << std::endl;
+        std::cout << "DEBUG: RF to filter = " << sol.pinput << " W" << std::endl;
+        std::cout << "DEBUG: RF output = " << sol.pfundamental << " W" << std::endl;
+        std::cout << "DEBUG: Filter loss = "
+                  << (sol.pC1 + sol.pC2 + sol.pC3 + sol.pL1 + sol.pL2) * 1000.0
+                  << " mW" << std::endl;
+      }
+
+      // Accumulate DC input power (ham radio convention)
+      totalSourcePower += sol.psource;
+
+      // Accumulate RF power delivered to filter
       totalInPower += sol.pinput;
 
       // Store output power
@@ -551,15 +572,14 @@ public:
       result.totalHarmW += result.harmW[n];
     }
     
-    // Insertion loss
-    if (totalInPower > 0) {
+    // Insertion loss (using DC input power - ham radio convention)
+    if (totalSourcePower > 0) {
       double totalOutPower = 0.0;
       for (int n = 1; n <= maxHarm; ++n) {
         totalOutPower += result.harmW[n];
       }
       result.insLossdB = 10.0 * std::log10(
-        totalOutPower / totalInPower
-	
+        totalOutPower / totalSourcePower
       );
     } else {
       result.insLossdB = 0.0;
@@ -744,11 +764,10 @@ int main() {
   const double ESRbase = 0.125;  // Ohms (C0G at HF)
   const double DCRbase = 0.055;  // Ohms (Coilcraft 132-xx)
   
-  // Square wave source - 58.3V DC supply for 50W output
+  // Square wave source - 58.9V DC supply for 50W DC input (ham radio convention)
   // Transformer: 50:200Ω (1:2 voltage ratio)
-  // Calculation: 50W @ 200Ω → 100V RMS → 141.4V peak
-  //              58.3V × 2.0 × (4/π) = 148.4V peak
-  SquareWaveSource source(58.3, 3e-9, 3e-9);
+  // Adjusted to center DC input power at 50W across frequency range
+  SquareWaveSource source(58.9, 3e-9, 3e-9);
   
   // Storage for all results
   std::vector<HarmonicAnalyzer::BandResult> allResults;
