@@ -378,7 +378,7 @@ private:
   double supply = 60.0;   // Volts (before transformer)
   double tRise = 3e-9;      // 3ns rise time
   double tFall = 3e-9;      // 3ns fall time
-  double tRatio = 2.0;  // Transformer voltage ratio (1:2 for 50:200Ω impedance)
+  double tRatio = 7.0/3.0;  // Transformer voltage ratio (3:7 turns = 36:196Ω impedance)
   
 public:
   SquareWaveSource(double supply = 60.0, double tRise = 3e-9, double tFall = 3e-9)
@@ -732,9 +732,27 @@ void printResult(const HarmonicAnalyzer::BandResult& r) {
 // Main Program
 //=============================================================================
 
-int main() {
+int main(int argc, char* argv[]) {
+  // Parse command line argument for Veer voltage
+  double veerVoltage = 55.5;  // Default value
+
+  if (argc > 1) {
+    try {
+      veerVoltage = std::stod(argv[1]);
+      if (veerVoltage < 0 || veerVoltage > 100) {
+        std::cerr << "Error: Veer voltage must be between 0 and 100V" << std::endl;
+        return 1;
+      }
+    } catch (const std::exception& e) {
+      std::cerr << "Error: Invalid voltage argument. Usage: " << argv[0]
+                << " [veer_voltage_in_volts]" << std::endl;
+      return 1;
+    }
+  }
+
   std::cout << "========================================" << std::endl;
   std::cout << "NexRig LPF Harmonic Analysis" << std::endl;
+  std::cout << "Veer Supply: " << veerVoltage << "V DC" << std::endl;
   std::cout << "========================================\n" << std::endl;
   
   // Band definitions from TX-LPF-ARRAY.md Rev 2.0, Table 3.1
@@ -764,10 +782,9 @@ int main() {
   const double ESRbase = 0.125;  // Ohms (C0G at HF)
   const double DCRbase = 0.055;  // Ohms (Coilcraft 132-xx)
   
-  // Square wave source - 58.9V DC supply for 50W DC input (ham radio convention)
-  // Transformer: 50:200Ω (1:2 voltage ratio)
-  // Adjusted to center DC input power at 50W across frequency range
-  SquareWaveSource source(58.9, 3e-9, 3e-9);
+  // Square wave source - Veer supply voltage from command line (default 55.5V)
+  // Transformer: 3:7 turns (36:196Ω impedance ratio)
+  SquareWaveSource source(veerVoltage, 3e-9, 3e-9);
   
   // Storage for all results
   std::vector<HarmonicAnalyzer::BandResult> allResults;
