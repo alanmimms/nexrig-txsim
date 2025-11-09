@@ -59,7 +59,20 @@ public:
   double phase() const {
     return std::atan2(imag, real);
   }
-  
+
+  // Complex conjugate
+  Complex conjugate() const {
+    return Complex(real, -imag);
+  }
+
+  // Real power: P = Re(V × I*) for phasors (peak values)
+  // Average power = P/2
+  static double realPower(const Complex& V, const Complex& I) {
+    Complex Iconj = I.conjugate();
+    Complex S = V * Iconj;  // Complex power
+    return S.real / 2.0;     // Average real power
+  }
+
   // Power delivered to resistive load R (assumes RMS voltage)
   double power(double R) const {
     double Vrms = magnitude();
@@ -234,11 +247,12 @@ public:
     Complex Vnode1;  // Input node (after source impedance, at C1/L1 junction)
     Complex Vnode2;  // Middle node (between L1 and L2, at C2 junction)
     Complex Voutput; // Output node (after L2, at C3/load junction)
-    
+
     Complex Ic1, Ic2, Ic3;
     Complex Il1, Il2;
-    
-    double pfundamental;
+
+    double pinput;       // Real power into filter from source
+    double pfundamental; // Real power delivered to load
     double pC1, pC2, pC3;
     double pL1, pL2;
   };
@@ -316,10 +330,6 @@ public:
     sol.Il1 = yL1 * (V[0] - V[1]);  // L1 series current
     sol.Il2 = yL2 * (V[1] - V[2]);  // L2 series current
 
-    Complex Iin = ysource * (Vin - V[0]);  // Input current from source
-    double Pin = (Vin.magnitude() * Iin.magnitude()) / 2.0;  // Apparent power
-    std::cout << "DEBUG: Pin = " << Pin << std::endl;
-
     // Convert phasor magnitudes to RMS
     double ic1rms = sol.Ic1.magnitude() / std::sqrt(2.0);
     double ic2rms = sol.Ic2.magnitude() / std::sqrt(2.0);
@@ -332,11 +342,16 @@ public:
     sol.pC3 = c3->powerDissipation(ic3rms);
     sol.pL1 = L1->powerDissipation(il1rms);
     sol.pL2 = L2->powerDissipation(il2rms);
-    
-    // Power delivered to load (phasor magnitude is peak, need RMS)
-    double Voutrms = V[2].magnitude() / std::sqrt(2.0);
-    sol.pfundamental = Voutrms * Voutrms / z0;
-    
+
+    // Calculate real power delivered to the filter input (at node V[0])
+    // This is the power that actually enters the filter, after source impedance loss
+    Complex Iin = ysource * (Vin - V[0]);  // Input current from source
+    sol.pinput = Complex::realPower(V[0], Iin);  // Power at filter input node
+
+    // Calculate real power delivered to load
+    Complex Iload = yload * V[2];  // Load current
+    sol.pfundamental = Complex::realPower(V[2], Iload);
+
     return sol;
   }
   
@@ -455,27 +470,31 @@ public:
       
       // Get source voltage at this harmonic
       Complex Vsource = source.fourierCoefficient(n, f0);
-      
-      if (n == 1) {
-	std::cout << "DEBUG: Vsource = " << Vsource.magnitude() 
-		  << " V (peak)" << std::endl;
-      }
 
       if (Vsource.magnitude() < 1e-6) {
         continue; // Negligible
       }
-      
-      // Input power available from source (into 200Ω)
-      double VsrcRMS = Vsource.magnitude() / std::sqrt(2.0);
-      double Pinput = VsrcRMS * VsrcRMS / 200.0;
-      totalInPower += Pinput;
-      
+
       // Solve filter at this frequency
       auto sol = filter.solve(omegaN, Vsource);
-      
+
+      // Debug output for fundamental
+      if (n == 1) {
+        std::cout << "DEBUG: Vsource = " << Vsource.magnitude()
+                  << " V (peak)" << std::endl;
+        std::cout << "DEBUG: Input power = " << sol.pinput << " W" << std::endl;
+        std::cout << "DEBUG: Output power = " << sol.pfundamental << " W" << std::endl;
+        std::cout << "DEBUG: Filter dissipation = "
+                  << (sol.pC1 + sol.pC2 + sol.pC3 + sol.pL1 + sol.pL2) * 1000.0
+                  << " mW" << std::endl;
+      }
+
+      // Accumulate actual input power delivered to filter
+      totalInPower += sol.pinput;
+
       // Store output power
       result.harmW[n] = sol.pfundamental;
-      
+
       // Accumulate component dissipation
       totalDiss += sol.pC1 + sol.pC2 + sol.pC3 +
                           sol.pL1 + sol.pL2;
@@ -497,12 +516,6 @@ public:
       vc1comps.push_back(sol.Vnode1.magnitude());
       vc2comps.push_back(sol.Vnode2.magnitude());
       vc3comps.push_back(sol.Voutput.magnitude());
-
-      if (n == 1) {
-	std::cout << "DEBUG: Voutput = " << sol.Voutput.magnitude() 
-		  << " V (peak)" << std::endl;
-	std::cout << "DEBUG: Power = " << sol.pfundamental << " W" << std::endl;
-      }
     }
     
     // Calculate total RMS currents (RSS sum)
