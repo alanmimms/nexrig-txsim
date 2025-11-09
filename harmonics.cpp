@@ -431,15 +431,21 @@ public:
     std::string bandName;
     std::string cornerName;
     double frequency;
-    
+
     std::vector<double> harmW;	 // Watts at each harmonic
     std::vector<double> harmdBc; // dBc relative to fundamental
-    
+
     double fundW;
     double totalHarmW;
     double insLossdB;
     double totalFiltDissW;
-    
+
+    // Fundamental frequency power metrics
+    double vsourcePeak;      // Source voltage (peak)
+    double dcInputPower;     // DC power from Veer
+    double rfToFilter;       // RF power into filter
+    double fundDissipation;  // Filter dissipation at fundamental
+
     ComponentStress C1, C2, C3, L1, L2;
     
     // Constructor to initialize vectors
@@ -486,16 +492,12 @@ public:
       // Solve filter at this frequency
       auto sol = filter.solve(omegaN, Vsource);
 
-      // Debug output for fundamental
+      // Store fundamental frequency metrics for output
       if (n == 1) {
-        std::cout << "DEBUG: Vsource = " << Vsource.magnitude()
-                  << " V (peak)" << std::endl;
-        std::cout << "DEBUG: DC input power = " << sol.psource << " W" << std::endl;
-        std::cout << "DEBUG: RF to filter = " << sol.pinput << " W" << std::endl;
-        std::cout << "DEBUG: RF output = " << sol.pfundamental << " W" << std::endl;
-        std::cout << "DEBUG: Filter loss = "
-                  << (sol.pC1 + sol.pC2 + sol.pC3 + sol.pL1 + sol.pL2) * 1000.0
-                  << " mW" << std::endl;
+        result.vsourcePeak = Vsource.magnitude();
+        result.dcInputPower = sol.psource;
+        result.rfToFilter = sol.pinput;
+        result.fundDissipation = sol.pC1 + sol.pC2 + sol.pC3 + sol.pL1 + sol.pL2;
       }
 
       // Accumulate DC input power (ham radio convention)
@@ -695,11 +697,15 @@ void exportResultsToCSV(
 
 void printResult(const HarmonicAnalyzer::BandResult& r) {
   std::cout << std::fixed << std::setprecision(3);
-  
+
   std::cout << "  Frequency: " << r.frequency / 1e6 << " MHz" << std::endl;
+  std::cout << "  Source Voltage (peak): " << r.vsourcePeak << " V" << std::endl;
+  std::cout << "  DC Input Power: " << r.dcInputPower << " W" << std::endl;
+  std::cout << "  RF to Filter: " << r.rfToFilter << " W" << std::endl;
   std::cout << "  Fundamental Power: " << r.fundW << " W" << std::endl;
+  std::cout << "  Fundamental Filter Loss: " << r.fundDissipation * 1000.0 << " mW" << std::endl;
   std::cout << "  Insertion Loss: " << r.insLossdB << " dB" << std::endl;
-  std::cout << "  Filter Dissipation: " << r.totalFiltDissW * 1000.0 
+  std::cout << "  Filter Dissipation: " << r.totalFiltDissW * 1000.0
             << " mW" << std::endl;
   
   std::cout << "\n  Harmonics (dBc):" << std::endl;
