@@ -237,35 +237,38 @@ void solveLinearSystem(Complex A[4][4], Complex b[4], Complex x[4], int n) {
 
 class ChebyshevLPF {
 private:
-  std::unique_ptr<Capacitor> c1, c2, c3;
-  std::unique_ptr<Inductor> L1, L2;
+  std::unique_ptr<Capacitor> c1, c2, c3, c4;
+  std::unique_ptr<Inductor> L1, L2, L3;
   double z0 = 200.0; // System impedance
-  
+
 public:
   struct SolutionPoint {
     Complex Vinput;  // Source voltage (before source impedance)
     Complex Vnode1;  // Input node (after source impedance, at C1/L1 junction)
-    Complex Vnode2;  // Middle node (between L1 and L2, at C2 junction)
-    Complex Voutput; // Output node (after L2, at C3/load junction)
+    Complex Vnode2;  // Between L1 and C2 (at C2 junction)
+    Complex Vnode3;  // Between L2 and C3 (at C3 junction)
+    Complex Voutput; // Output node (after L3, at C4/load junction)
 
-    Complex Ic1, Ic2, Ic3;
-    Complex Il1, Il2;
+    Complex Ic1, Ic2, Ic3, Ic4;
+    Complex Il1, Il2, Il3;
 
     double psource;      // DC power from source (includes source impedance loss)
     double pinput;       // Real power into filter (after source impedance)
     double pfundamental; // Real power delivered to load
-    double pC1, pC2, pC3;
-    double pL1, pL2;
+    double pC1, pC2, pC3, pC4;
+    double pL1, pL2, pL3;
   };
-  
-  ChebyshevLPF(double C1, double C2, double C3,
-               double L1, double L2,
+
+  ChebyshevLPF(double C1, double C2, double C3, double C4,
+               double L1, double L2, double L3,
                double ESRcap, double DCRind)
     : c1(std::make_unique<Capacitor>(C1, ESRcap, 1000.0)),
       c2(std::make_unique<Capacitor>(C2, ESRcap, 1000.0)),
       c3(std::make_unique<Capacitor>(C3, ESRcap, 1000.0)),
+      c4(std::make_unique<Capacitor>(C4, ESRcap, 1000.0)),
       L1(std::make_unique<Inductor>(L1, DCRind, 2.0)),
-      L2(std::make_unique<Inductor>(L2, DCRind, 2.0))
+      L2(std::make_unique<Inductor>(L2, DCRind, 2.0)),
+      L3(std::make_unique<Inductor>(L3, DCRind, 2.0))
   { }
   
   SolutionPoint solve(double omega, Complex Vin) {
@@ -273,23 +276,26 @@ public:
     Complex yC1 = c1->admittance(omega);
     Complex yC2 = c2->admittance(omega);
     Complex yC3 = c3->admittance(omega);
+    Complex yC4 = c4->admittance(omega);
     Complex yL1 = L1->admittance(omega);
     Complex yL2 = L2->admittance(omega);
+    Complex yL3 = L3->admittance(omega);
     Complex yload(1.0 / z0, 0.0);
     // H-bridge + transformer acts as low-impedance voltage source
     // Source impedance ≈ transformer DCR + FET Rds_on ≈ 0.5Ω
     Complex ysource(1.0 / 0.5, 0.0);
 
-    // Build 3×3 matrix for shunt-first topology:
-    // Vsource --[Zsource]-- V0 --+--[L1]--+--[L2]--+-- V2
-    //                             |        |        |
-    //                            C1       C2       C3, Zload
-    //                             |        |        |
-    //                            GND      GND      GND
+    // Build 4×4 matrix for 7th-order shunt-first topology:
+    // Vsource --[Zsource]-- V0 --[L1]-- V1 --[L2]-- V2 --[L3]-- V3
+    //                       |           |           |           |
+    //                      C1          C2          C3          C4, Zload
+    //                       |           |           |           |
+    //                      GND         GND         GND         GND
     //
     // V0 = input node voltage (after source impedance)
-    // V1 = middle node voltage (between L1 and L2)
-    // V2 = output node voltage (at load) = Vout
+    // V1 = between L1 and L2
+    // V2 = between L2 and L3
+    // V3 = output node voltage (at load) = Vout
 
     Complex A[4][4] = {Complex(0,0)};
     Complex b[4] = {Complex(0,0)};
@@ -300,51 +306,69 @@ public:
     A[0][0] = ysource + yC1 + yL1;
     A[0][1] = Complex(0,0) - yL1;
     A[0][2] = Complex(0, 0);
+    A[0][3] = Complex(0, 0);
     b[0] = ysource * Vin;
 
-    // Node 1 equation (middle node between L1 and L2):
+    // Node 1 equation (between L1 and L2):
     // -yL1·V0 + (yL1 + yC2 + yL2)·V1 - yL2·V2 = 0
     A[1][0] = Complex(0,0) - yL1;
     A[1][1] = yL1 + yC2 + yL2;
     A[1][2] = Complex(0,0) - yL2;
+    A[1][3] = Complex(0, 0);
     b[1] = Complex(0, 0);
 
-    // Node 2 equation (output node):
-    // -yL2·V1 + (yL2 + yC3 + yload)·V2 = 0
+    // Node 2 equation (between L2 and L3):
+    // -yL2·V1 + (yL2 + yC3 + yL3)·V2 - yL3·V3 = 0
     A[2][0] = Complex(0, 0);
     A[2][1] = Complex(0,0) - yL2;
-    A[2][2] = yL2 + yC3 + yload;
+    A[2][2] = yL2 + yC3 + yL3;
+    A[2][3] = Complex(0,0) - yL3;
     b[2] = Complex(0, 0);
 
+    // Node 3 equation (output node):
+    // -yL3·V2 + (yL3 + yC4 + yload)·V3 = 0
+    A[3][0] = Complex(0, 0);
+    A[3][1] = Complex(0, 0);
+    A[3][2] = Complex(0,0) - yL3;
+    A[3][3] = yL3 + yC4 + yload;
+    b[3] = Complex(0, 0);
+
     // Solve
-    solveLinearSystem(A, b, V, 3);
+    solveLinearSystem(A, b, V, 4);
 
     // Calculate branch currents
     SolutionPoint sol;
     sol.Vinput = Vin;
     sol.Vnode1 = V[0];  // Input node voltage (not same as Vin!)
-    sol.Vnode2 = V[1];  // Middle node voltage
-    sol.Voutput = V[2]; // Output node voltage
+    sol.Vnode2 = V[1];  // Between L1 and L2
+    sol.Vnode3 = V[2];  // Between L2 and L3
+    sol.Voutput = V[3]; // Output node voltage
 
     // Currents through components (for shunt-first topology):
     sol.Ic1 = yC1 * V[0];  // C1 shunt current
     sol.Ic2 = yC2 * V[1];  // C2 shunt current
     sol.Ic3 = yC3 * V[2];  // C3 shunt current
+    sol.Ic4 = yC4 * V[3];  // C4 shunt current
     sol.Il1 = yL1 * (V[0] - V[1]);  // L1 series current
     sol.Il2 = yL2 * (V[1] - V[2]);  // L2 series current
+    sol.Il3 = yL3 * (V[2] - V[3]);  // L3 series current
 
     // Convert phasor magnitudes to RMS
     double ic1rms = sol.Ic1.magnitude() / std::sqrt(2.0);
     double ic2rms = sol.Ic2.magnitude() / std::sqrt(2.0);
     double ic3rms = sol.Ic3.magnitude() / std::sqrt(2.0);
+    double ic4rms = sol.Ic4.magnitude() / std::sqrt(2.0);
     double il1rms = sol.Il1.magnitude() / std::sqrt(2.0);
     double il2rms = sol.Il2.magnitude() / std::sqrt(2.0);
-    
+    double il3rms = sol.Il3.magnitude() / std::sqrt(2.0);
+
     sol.pC1 = c1->powerDissipation(ic1rms);
     sol.pC2 = c2->powerDissipation(ic2rms);
     sol.pC3 = c3->powerDissipation(ic3rms);
+    sol.pC4 = c4->powerDissipation(ic4rms);
     sol.pL1 = L1->powerDissipation(il1rms);
     sol.pL2 = L2->powerDissipation(il2rms);
+    sol.pL3 = L3->powerDissipation(il3rms);
 
     // Calculate power from DC source (ham radio convention: DC input power)
     // This includes power to filter + power dissipated in source impedance
@@ -356,8 +380,8 @@ public:
     sol.pinput = Complex::realPower(V[0], Iin);  // Power at filter input node
 
     // Calculate real power delivered to load
-    Complex Iload = yload * V[2];  // Load current
-    sol.pfundamental = Complex::realPower(V[2], Iload);
+    Complex Iload = yload * V[3];  // Load current (now at V3)
+    sol.pfundamental = Complex::realPower(V[3], Iload);
 
     return sol;
   }
@@ -365,8 +389,10 @@ public:
   const Capacitor* getC1() const { return c1.get(); }
   const Capacitor* getC2() const { return c2.get(); }
   const Capacitor* getC3() const { return c3.get(); }
+  const Capacitor* getC4() const { return c4.get(); }
   const Inductor* getL1() const { return L1.get(); }
   const Inductor* getL2() const { return L2.get(); }
+  const Inductor* getL3() const { return L3.get(); }
 };
 
 //=============================================================================
@@ -446,7 +472,7 @@ public:
     double rfToFilter;       // RF power into filter
     double fundDissipation;  // Filter dissipation at fundamental
 
-    ComponentStress C1, C2, C3, L1, L2;
+    ComponentStress C1, C2, C3, C4, L1, L2, L3;
     
     // Constructor to initialize vectors
     BandResult(int maxHarm = 10) {
@@ -471,11 +497,11 @@ public:
     double totalDiss = 0.0;
     double totalSourcePower = 0.0;  // DC input power (ham radio convention)
     double totalInPower = 0.0;      // RF power to filter
-    
+
     // Accumulate stress across all harmonics
-    std::vector<double> ic1comps, ic2comps, ic3comps;
-    std::vector<double> il1comps, il2comps;
-    std::vector<double> vc1comps, vc2comps, vc3comps;
+    std::vector<double> ic1comps, ic2comps, ic3comps, ic4comps;
+    std::vector<double> il1comps, il2comps, il3comps;
+    std::vector<double> vc1comps, vc2comps, vc3comps, vc4comps;
     
     // Analyze each harmonic
     for (int n = 1; n <= maxHarm; ++n) {
@@ -497,7 +523,8 @@ public:
         result.vsourcePeak = Vsource.magnitude();
         result.dcInputPower = sol.psource;
         result.rfToFilter = sol.pinput;
-        result.fundDissipation = sol.pC1 + sol.pC2 + sol.pC3 + sol.pL1 + sol.pL2;
+        result.fundDissipation = sol.pC1 + sol.pC2 + sol.pC3 + sol.pC4 +
+                                  sol.pL1 + sol.pL2 + sol.pL3;
       }
 
       // Accumulate DC input power (ham radio convention)
@@ -510,26 +537,31 @@ public:
       result.harmW[n] = sol.pfundamental;
 
       // Accumulate component dissipation
-      totalDiss += sol.pC1 + sol.pC2 + sol.pC3 +
-                          sol.pL1 + sol.pL2;
-      
+      totalDiss += sol.pC1 + sol.pC2 + sol.pC3 + sol.pC4 +
+                   sol.pL1 + sol.pL2 + sol.pL3;
+
       // Accumulate stress (RMS sum for currents and voltages)
       double ic1 = sol.Ic1.magnitude() / std::sqrt(2.0);
       double ic2 = sol.Ic2.magnitude() / std::sqrt(2.0);
       double ic3 = sol.Ic3.magnitude() / std::sqrt(2.0);
+      double ic4 = sol.Ic4.magnitude() / std::sqrt(2.0);
       double il1 = sol.Il1.magnitude() / std::sqrt(2.0);
       double il2 = sol.Il2.magnitude() / std::sqrt(2.0);
-      
+      double il3 = sol.Il3.magnitude() / std::sqrt(2.0);
+
       ic1comps.push_back(ic1 * ic1);
       ic2comps.push_back(ic2 * ic2);
       ic3comps.push_back(ic3 * ic3);
+      ic4comps.push_back(ic4 * ic4);
       il1comps.push_back(il1 * il1);
       il2comps.push_back(il2 * il2);
-      
+      il3comps.push_back(il3 * il3);
+
       // Voltage stress (peak values)
       vc1comps.push_back(sol.Vnode1.magnitude());
       vc2comps.push_back(sol.Vnode2.magnitude());
-      vc3comps.push_back(sol.Voutput.magnitude());
+      vc3comps.push_back(sol.Vnode3.magnitude());
+      vc4comps.push_back(sol.Voutput.magnitude());
     }
     
     // Calculate total RMS currents (RSS sum)
@@ -538,24 +570,29 @@ public:
       for (double c : components) sum += c;
       return std::sqrt(sum);
     };
-    
+
     result.C1.Irms = sumRMS(ic1comps);
     result.C2.Irms = sumRMS(ic2comps);
     result.C3.Irms = sumRMS(ic3comps);
+    result.C4.Irms = sumRMS(ic4comps);
     result.L1.Irms = sumRMS(il1comps);
     result.L2.Irms = sumRMS(il2comps);
-    
+    result.L3.Irms = sumRMS(il3comps);
+
     // Peak voltages (max across all harmonics)
     result.C1.Vpeak = *std::max_element(vc1comps.begin(), vc1comps.end());
     result.C2.Vpeak = *std::max_element(vc2comps.begin(), vc2comps.end());
     result.C3.Vpeak = *std::max_element(vc3comps.begin(), vc3comps.end());
-    
+    result.C4.Vpeak = *std::max_element(vc4comps.begin(), vc4comps.end());
+
     // Check overstress
     result.C1.overstressed = (result.C1.Vpeak > 1000.0);
     result.C2.overstressed = (result.C2.Vpeak > 1000.0);
     result.C3.overstressed = (result.C3.Vpeak > 1000.0);
+    result.C4.overstressed = (result.C4.Vpeak > 1000.0);
     result.L1.overstressed = (result.L1.Irms > 2.0);
     result.L2.overstressed = (result.L2.Irms > 2.0);
+    result.L3.overstressed = (result.L3.Irms > 2.0);
     
     // Calculate dBc values
     result.fundW = result.harmW[1];
@@ -606,6 +643,8 @@ struct BandFilter {
   double c2;  // Farads
   double l2;  // Henries
   double c3;  // Farads
+  double l3;  // Henries
+  double c4;  // Farads
 
   BandFilter(std::string name,
 	     double fLMHz,
@@ -613,8 +652,10 @@ struct BandFilter {
 	     double c1pF,
 	     double c2pF,
 	     double c3pF,
+	     double c4pF,
 	     double l1nH,
-	     double l2nH)
+	     double l2nH,
+	     double l3nH)
     : name(name),
       fLow(fLMHz*1.0e6),
       fHigh(fHMHz*1.0e6),
@@ -622,7 +663,9 @@ struct BandFilter {
       l1(l1nH*1.0e-9),
       c2(c2pF*1.0e-12),
       l2(l2nH*1.0e-9),
-      c3(c3pF*1.0e-12)
+      c3(c3pF*1.0e-12),
+      l3(l3nH*1.0e-9),
+      c4(c4pF*1.0e-12)
   { }
 };
 
@@ -657,9 +700,9 @@ void exportResultsToCSV(
   csv << "Band,Corner,fMHz,";
   csv << "FundW,InsLossdB,FilterDissmW,";
   csv << "H2dBc,H3dBc,H4dBc,H5dBc,H6dBc,H7dBc,H8dBc,H9dBc,H10dBc,";
-  csv << "C1IrmsA,C2IrmsA,C3IrmsA,L1IrmsA,L2IrmsA,";
-  csv << "C1VpkV,C2VpkV,C3VpkV,";
-  csv << "C1Over,C2Over,C3Over,L1Over,L2Over" << std::endl;
+  csv << "C1IrmsA,C2IrmsA,C3IrmsA,C4IrmsA,L1IrmsA,L2IrmsA,L3IrmsA,";
+  csv << "C1VpkV,C2VpkV,C3VpkV,C4VpkV,";
+  csv << "C1Over,C2Over,C3Over,C4Over,L1Over,L2Over,L3Over" << std::endl;
   
   // Write data
   for (const auto& r : results) {
@@ -674,16 +717,18 @@ void exportResultsToCSV(
     for (int n = 2; n <= 10; ++n) {
       csv << r.harmdBc[n] << ",";
     }
-    
+
     // Component stress
-    csv << r.C1.Irms << "," << r.C2.Irms << "," << r.C3.Irms << ",";
-    csv << r.L1.Irms << "," << r.L2.Irms << ",";
-    csv << r.C1.Vpeak << "," << r.C2.Vpeak << "," << r.C3.Vpeak << ",";
+    csv << r.C1.Irms << "," << r.C2.Irms << "," << r.C3.Irms << "," << r.C4.Irms << ",";
+    csv << r.L1.Irms << "," << r.L2.Irms << "," << r.L3.Irms << ",";
+    csv << r.C1.Vpeak << "," << r.C2.Vpeak << "," << r.C3.Vpeak << "," << r.C4.Vpeak << ",";
     csv << (r.C1.overstressed ? "YES" : "NO") << ",";
     csv << (r.C2.overstressed ? "YES" : "NO") << ",";
     csv << (r.C3.overstressed ? "YES" : "NO") << ",";
+    csv << (r.C4.overstressed ? "YES" : "NO") << ",";
     csv << (r.L1.overstressed ? "YES" : "NO") << ",";
-    csv << (r.L2.overstressed ? "YES" : "NO");
+    csv << (r.L2.overstressed ? "YES" : "NO") << ",";
+    csv << (r.L3.overstressed ? "YES" : "NO");
     csv << std::endl;
   }
   
@@ -719,19 +764,24 @@ void printResult(const HarmonicAnalyzer::BandResult& r) {
   }
   
   std::cout << "\n  Component Stress:" << std::endl;
-  std::cout << "    C1: " << r.C1.Irms << " A(rms), " 
-            << r.C1.Vpeak << " V(pk)" 
+  std::cout << "    C1: " << r.C1.Irms << " A(rms), "
+            << r.C1.Vpeak << " V(pk)"
             << (r.C1.overstressed ? " **OVERSTRESSED**" : "") << std::endl;
-  std::cout << "    C2: " << r.C2.Irms << " A(rms), " 
-            << r.C2.Vpeak << " V(pk)" 
+  std::cout << "    C2: " << r.C2.Irms << " A(rms), "
+            << r.C2.Vpeak << " V(pk)"
             << (r.C2.overstressed ? " **OVERSTRESSED**" : "") << std::endl;
-  std::cout << "    C3: " << r.C3.Irms << " A(rms), " 
-            << r.C3.Vpeak << " V(pk)" 
+  std::cout << "    C3: " << r.C3.Irms << " A(rms), "
+            << r.C3.Vpeak << " V(pk)"
             << (r.C3.overstressed ? " **OVERSTRESSED**" : "") << std::endl;
+  std::cout << "    C4: " << r.C4.Irms << " A(rms), "
+            << r.C4.Vpeak << " V(pk)"
+            << (r.C4.overstressed ? " **OVERSTRESSED**" : "") << std::endl;
   std::cout << "    L1: " << r.L1.Irms << " A(rms)"
             << (r.L1.overstressed ? " **OVERSTRESSED**" : "") << std::endl;
   std::cout << "    L2: " << r.L2.Irms << " A(rms)"
             << (r.L2.overstressed ? " **OVERSTRESSED**" : "") << std::endl;
+  std::cout << "    L3: " << r.L3.Irms << " A(rms)"
+            << (r.L3.overstressed ? " **OVERSTRESSED**" : "") << std::endl;
 }
 
 //=============================================================================
@@ -761,17 +811,50 @@ int main(int argc, char* argv[]) {
   std::cout << "Veer Supply: " << veerVoltage << "V DC" << std::endl;
   std::cout << "========================================\n" << std::endl;
   
-  // Band definitions from TX-LPF-ARRAY.md Rev 2.0, Table 3.1
-  // BandFilter(name, fLowMHz, fHighMHz, c1pF, c2pF, c3pF, l1nH, l2nH)
+  // Band definitions - 7th-order Chebyshev LPF (0.25dB ripple, 200Ω impedance)
+  // BandFilter(name, fLowMHz, fHighMHz, c1pF, c2pF, c3pF, c4pF, l1nH, l2nH, l3nH)
+  // Prototype: g1=0.9309, g2=1.2243, g3=1.5827, g4=1.6896, g5=1.5827, g6=1.2243, g7=0.9309
+  // C2 and C3 use 2 parallel caps for current sharing
   std::vector<BandFilter> bands = {
-    BandFilter("160m", 1.8, 2.0, 390, 660, 390, 18000, 18000),  // C2: 2×330pF, L: 18µH
-    BandFilter("80m",  3.5, 4.0, 180, 320, 180, 10000, 10000),  // C2: 2×160pF, L: 10µH
-    BandFilter("60m",  5.3, 5.4, 150, 240, 150, 6800, 6800),    // C2: 2×120pF, L: 6.8µH
-    BandFilter("40m",  7.0, 7.3, 100, 200, 100, 4700, 4700),    // C2: 2×100pF, L: 4.7µH
-    BandFilter("30m",  10.1, 10.15, 82, 136, 82, 3300, 3300),   // C2: 2×68pF, L: 3.3µH
-    BandFilter("20m",  14.0, 14.35, 56, 94, 56, 2200, 2200),    // C2: 2×47pF, L: 2.2µH
-    BandFilter("17m/15m", 18.068, 21.45, 39, 66, 39, 1800, 1800), // C2: 2×33pF, L: 1.8µH
-    BandFilter("12m/10m", 24.89, 29.7, 27, 48, 27, 1500, 1500),   // C2: 2×24pF, L: 1.5µH
+    // 160m: f₀=1.9 MHz
+    BandFilter("160m", 1.8, 2.0,
+               390, 660, 660, 390,  // C1, C2(2×330pF), C3(2×330pF), C4
+               20000, 27000, 20000), // L1, L2, L3 (E12 values: 20µH, 27µH, 20µH)
+
+    // 80m: f₀=3.75 MHz
+    BandFilter("80m", 3.5, 4.0,
+               180, 320, 320, 180,  // C1, C2(2×160pF), C3(2×160pF), C4
+               10000, 15000, 10000), // L1, L2, L3 (E12: 10µH, 15µH, 10µH)
+
+    // 60m: f₀=5.35 MHz
+    BandFilter("60m", 5.3, 5.4,
+               120, 220, 220, 120,  // C1, C2(2×110pF), C3(2×110pF), C4
+               6800, 10000, 6800),  // L1, L2, L3 (E12: 6.8µH, 10µH, 6.8µH)
+
+    // 40m: f₀=7.15 MHz
+    BandFilter("40m", 7.0, 7.3,
+               82, 164, 164, 82,    // C1, C2(2×82pF), C3(2×82pF), C4
+               5600, 8200, 5600),   // L1, L2, L3 (E12: 5.6µH, 8.2µH, 5.6µH)
+
+    // 30m: f₀=10.125 MHz
+    BandFilter("30m", 10.1, 10.15,
+               56, 94, 94, 56,      // C1, C2(2×47pF), C3(2×47pF), C4
+               3900, 5600, 3900),   // L1, L2, L3 (E12: 3.9µH, 5.6µH, 3.9µH)
+
+    // 20m: f₀=14.175 MHz
+    BandFilter("20m", 14.0, 14.35,
+               39, 72, 72, 39,      // C1, C2(2×36pF), C3(2×36pF), C4
+               2700, 3900, 2700),   // L1, L2, L3 (E12: 2.7µH, 3.9µH, 2.7µH)
+
+    // 17m/15m: f₀=19.76 MHz
+    BandFilter("17m/15m", 18.068, 21.45,
+               27, 54, 54, 27,      // C1, C2(2×27pF), C3(2×27pF), C4
+               2000, 2700, 2000),   // L1, L2, L3 (E12: 2.0µH, 2.7µH, 2.0µH)
+
+    // 12m/10m: f₀=27.3 MHz
+    BandFilter("12m/10m", 24.89, 29.7,
+               22, 36, 36, 22,      // C1, C2(2×18pF), C3(2×18pF), C4
+               1500, 2200, 1500),   // L1, L2, L3 (E12: 1.5µH, 2.2µH, 1.5µH)
   };
   
   // Tolerance corners
@@ -800,38 +883,104 @@ int main(int argc, char* argv[]) {
     std::cout << "\n========================================" << std::endl;
     std::cout << "Band: " << band.name << std::endl;
     std::cout << "========================================" << std::endl;
-    
+
     // Analyze each corner
     for (const auto& corner : corners) {
       std::cout << "\n--- Corner: " << corner.name << " ---" << std::endl;
-      
+
       // Apply tolerances
       double C1 = band.c1 * corner.Cfactor;
       double C2 = band.c2 * corner.Cfactor;
       double C3 = band.c3 * corner.Cfactor;
+      double C4 = band.c4 * corner.Cfactor;
       double L1 = band.l1 * corner.Lfactor;
       double L2 = band.l2 * corner.Lfactor;
+      double L3 = band.l3 * corner.Lfactor;
       double ESR = ESRbase * corner.ESRfactor;
       double DCR = DCRbase * corner.DCRfactor;
-      
-      // Create filter with corner values
-      ChebyshevLPF filter(C1, C2, C3, L1, L2, ESR, DCR);
-      
-      // Analyze at bottom of band
-      std::cout << "\n[Bottom of Band]" << std::endl;
-      auto low = HarmonicAnalyzer::analyze(
-        filter, source, band.name, corner.name, band.fLow, 10
-      );
-      printResult(low);
-      allResults.push_back(low);
-      
-      // Analyze at top of band
-      std::cout << "\n[Top of Band]" << std::endl;
-      auto high = HarmonicAnalyzer::analyze(
-        filter, source, band.name, corner.name, band.fHigh, 10
-      );
-      printResult(high);
-      allResults.push_back(high);
+
+      // Create filter with corner values (7th-order)
+      ChebyshevLPF filter(C1, C2, C3, C4, L1, L2, L3, ESR, DCR);
+
+      // For combined bands, analyze each sub-band separately
+      if (band.name == "17m/15m") {
+        // 17m band: 18.068-18.168 MHz
+        std::cout << "\n[17m Bottom]" << std::endl;
+        auto m17low = HarmonicAnalyzer::analyze(
+          filter, source, "17m", corner.name, 18.068e6, 10
+        );
+        printResult(m17low);
+        allResults.push_back(m17low);
+
+        std::cout << "\n[17m Top]" << std::endl;
+        auto m17high = HarmonicAnalyzer::analyze(
+          filter, source, "17m", corner.name, 18.168e6, 10
+        );
+        printResult(m17high);
+        allResults.push_back(m17high);
+
+        // 15m band: 21.0-21.45 MHz
+        std::cout << "\n[15m Bottom]" << std::endl;
+        auto m15low = HarmonicAnalyzer::analyze(
+          filter, source, "15m", corner.name, 21.0e6, 10
+        );
+        printResult(m15low);
+        allResults.push_back(m15low);
+
+        std::cout << "\n[15m Top]" << std::endl;
+        auto m15high = HarmonicAnalyzer::analyze(
+          filter, source, "15m", corner.name, 21.45e6, 10
+        );
+        printResult(m15high);
+        allResults.push_back(m15high);
+      }
+      else if (band.name == "12m/10m") {
+        // 12m band: 24.89-24.99 MHz
+        std::cout << "\n[12m Bottom]" << std::endl;
+        auto m12low = HarmonicAnalyzer::analyze(
+          filter, source, "12m", corner.name, 24.89e6, 10
+        );
+        printResult(m12low);
+        allResults.push_back(m12low);
+
+        std::cout << "\n[12m Top]" << std::endl;
+        auto m12high = HarmonicAnalyzer::analyze(
+          filter, source, "12m", corner.name, 24.99e6, 10
+        );
+        printResult(m12high);
+        allResults.push_back(m12high);
+
+        // 10m band: 28.0-29.7 MHz
+        std::cout << "\n[10m Bottom]" << std::endl;
+        auto m10low = HarmonicAnalyzer::analyze(
+          filter, source, "10m", corner.name, 28.0e6, 10
+        );
+        printResult(m10low);
+        allResults.push_back(m10low);
+
+        std::cout << "\n[10m Top]" << std::endl;
+        auto m10high = HarmonicAnalyzer::analyze(
+          filter, source, "10m", corner.name, 29.7e6, 10
+        );
+        printResult(m10high);
+        allResults.push_back(m10high);
+      }
+      else {
+        // Regular bands - analyze bottom and top
+        std::cout << "\n[Bottom of Band]" << std::endl;
+        auto low = HarmonicAnalyzer::analyze(
+          filter, source, band.name, corner.name, band.fLow, 10
+        );
+        printResult(low);
+        allResults.push_back(low);
+
+        std::cout << "\n[Top of Band]" << std::endl;
+        auto high = HarmonicAnalyzer::analyze(
+          filter, source, band.name, corner.name, band.fHigh, 10
+        );
+        printResult(high);
+        allResults.push_back(high);
+      }
     }
   }
   
