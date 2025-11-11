@@ -857,13 +857,16 @@ int main(int argc, char* argv[]) {
                1500, 2200, 1500),   // L1, L2, L3 (E12: 1.5µH, 2.2µH, 1.5µH)
   };
   
+  static const auto Ctol = 0.05;    // +/- 5%
+  static const auto Ltol = 0.2;	    // +/- 20%
+
   // Tolerance corners
   std::vector<ToleranceCorner> corners = {
     {"Nominal",     1.00, 1.00, 1.00, 1.00},
-    {"C+/L+",       1.05, 1.10, 0.90, 0.90},  // Caps high, inductors high
-    {"C+/L-",       1.05, 0.90, 0.90, 1.10},  // Caps high, inductors low
-    {"C-/L+",       0.95, 1.10, 1.10, 0.90},  // Caps low, inductors high
-    {"C-/L-",       0.95, 0.90, 1.10, 1.10},  // Caps low, inductors low
+    {"C+/L+",       1+Ctol, 1+Ltol, 0.90, 0.90},  // Caps high, inductors high
+    {"C+/L-",       1+Ctol, 1-Ltol, 0.90, 1.10},  // Caps high, inductors low
+    {"C-/L+",       1-Ctol, 1+Ltol, 1.10, 0.90},  // Caps low, inductors high
+    {"C-/L-",       1-Ctol, 1-Ltol, 1.10, 1.10},  // Caps low, inductors low
     {"WorstLoss",   1.00, 1.00, 1.30, 1.30}   // Nominal values, high loss
   };
   
