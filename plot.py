@@ -69,7 +69,7 @@ def plot_insertion_loss(df, output_dir='plots'):
     """Plot insertion loss vs frequency for all corners"""
     Path(output_dir).mkdir(exist_ok=True)
 
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=(14, 8))
 
     corners = df['Corner'].unique()
     colors = plt.cm.tab10(np.linspace(0, 1, len(corners)))
@@ -88,6 +88,31 @@ def plot_insertion_loss(df, output_dir='plots'):
                 label=corner,
                 color=color,
                 markersize=6)
+
+    # Add vertical lines and labels for band boundaries
+    # Extract band info from nominal corner
+    df_nom = df[df['Corner'] == 'Nominal'].sort_values('fMHz')
+    bands = df_nom['Band'].unique()
+
+    band_ranges = {}
+    for band in bands:
+        band_data = df_nom[df_nom['Band'] == band]
+        fmin = band_data['fMHz'].min()
+        fmax = band_data['fMHz'].max()
+        band_ranges[band] = (fmin, fmax)
+
+    # Draw vertical lines at band boundaries and label regions
+    ylim = ax.get_ylim()
+    for i, (band, (fmin, fmax)) in enumerate(band_ranges.items()):
+        # Vertical lines at boundaries
+        ax.axvline(fmin, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+        ax.axvline(fmax, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+
+        # Band label in the middle
+        fmid = (fmin + fmax) / 2
+        ax.text(fmid, ylim[0] + (ylim[1] - ylim[0]) * 0.95, band,
+                ha='center', va='top', fontsize=9, fontweight='bold',
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.3))
 
     ax.set_xlabel('Frequency (MHz)', fontsize=12)
     ax.set_ylabel('Insertion Loss (dB)', fontsize=12)
@@ -108,9 +133,9 @@ def plot_component_stress(df, output_dir='plots'):
     """Plot component current stress for nominal corner"""
     Path(output_dir).mkdir(exist_ok=True)
 
-    df_nom = df[df['Corner'] == 'Nominal'].copy()
+    df_nom = df[df['Corner'] == 'Nominal'].copy().sort_values('fMHz')
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 10))
 
     # Current stress
     freq = df_nom['fMHz']
@@ -126,6 +151,24 @@ def plot_component_stress(df, output_dir='plots'):
     # Add rating lines
     ax1.axhline(2.0, color='red', linestyle='--', linewidth=1.5,
                 label='Inductor Saturation (2A)')
+
+    # Add band boundaries and labels
+    bands = df_nom['Band'].unique()
+    band_ranges = {}
+    for band in bands:
+        band_data = df_nom[df_nom['Band'] == band]
+        fmin = band_data['fMHz'].min()
+        fmax = band_data['fMHz'].max()
+        band_ranges[band] = (fmin, fmax)
+
+    ylim1 = ax1.get_ylim()
+    for band, (fmin, fmax) in band_ranges.items():
+        ax1.axvline(fmin, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+        ax1.axvline(fmax, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+        fmid = (fmin + fmax) / 2
+        ax1.text(fmid, ylim1[1] - (ylim1[1] - ylim1[0]) * 0.05, band,
+                ha='center', va='top', fontsize=9, fontweight='bold',
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.3))
 
     ax1.set_xlabel('Frequency (MHz)', fontsize=12)
     ax1.set_ylabel('RMS Current (A)', fontsize=12)
@@ -145,6 +188,16 @@ def plot_component_stress(df, output_dir='plots'):
     ax2.axhline(1000, color='red', linestyle='--', linewidth=1.5,
                 label='Voltage Rating (1000V)')
 
+    # Add band boundaries and labels
+    ylim2 = ax2.get_ylim()
+    for band, (fmin, fmax) in band_ranges.items():
+        ax2.axvline(fmin, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+        ax2.axvline(fmax, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+        fmid = (fmin + fmax) / 2
+        ax2.text(fmid, ylim2[1] - (ylim2[1] - ylim2[0]) * 0.05, band,
+                ha='center', va='top', fontsize=9, fontweight='bold',
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.3))
+
     ax2.set_xlabel('Frequency (MHz)', fontsize=12)
     ax2.set_ylabel('Peak Voltage (V)', fontsize=12)
     ax2.set_title('Capacitor Voltage Stress (Nominal Corner)',
@@ -162,7 +215,7 @@ def plot_filter_dissipation(df, output_dir='plots'):
     """Plot filter power dissipation"""
     Path(output_dir).mkdir(exist_ok=True)
 
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=(14, 8))
 
     corners = df['Corner'].unique()
     colors = plt.cm.tab10(np.linspace(0, 1, len(corners)))
@@ -180,6 +233,31 @@ def plot_filter_dissipation(df, output_dir='plots'):
                 label=corner,
                 color=color,
                 markersize=6)
+
+    # Add vertical lines and labels for band boundaries
+    # Extract band info from nominal corner
+    df_nom = df[df['Corner'] == 'Nominal'].sort_values('fMHz')
+    bands = df_nom['Band'].unique()
+
+    band_ranges = {}
+    for band in bands:
+        band_data = df_nom[df_nom['Band'] == band]
+        fmin = band_data['fMHz'].min()
+        fmax = band_data['fMHz'].max()
+        band_ranges[band] = (fmin, fmax)
+
+    # Draw vertical lines at band boundaries and label regions
+    ylim = ax.get_ylim()
+    for i, (band, (fmin, fmax)) in enumerate(band_ranges.items()):
+        # Vertical lines at boundaries
+        ax.axvline(fmin, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+        ax.axvline(fmax, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+
+        # Band label in the middle
+        fmid = (fmin + fmax) / 2
+        ax.text(fmid, ylim[1] - (ylim[1] - ylim[0]) * 0.05, band,
+                ha='center', va='top', fontsize=9, fontweight='bold',
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.3))
 
     ax.set_xlabel('Frequency (MHz)', fontsize=12)
     ax.set_ylabel('Power Dissipation (mW)', fontsize=12)
@@ -206,7 +284,7 @@ def plot_worst_case_comparison(df, output_dir='plots'):
 
     h3_data.columns = ['fMHz', 'H3min', 'H3max', 'Band', 'Corner']
 
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=(14, 8))
 
     # Plot range
     freq = h3_data['fMHz']
@@ -224,6 +302,25 @@ def plot_worst_case_comparison(df, output_dir='plots'):
     # Design target
     ax.axhline(-60, color='green', linestyle='--', linewidth=2,
                label='Design Target (-60 dBc)')
+
+    # Add band boundaries and labels
+    df_nom = df[df['Corner'] == 'Nominal'].sort_values('fMHz')
+    bands = df_nom['Band'].unique()
+    band_ranges = {}
+    for band in bands:
+        band_data = df_nom[df_nom['Band'] == band]
+        fmin = band_data['fMHz'].min()
+        fmax = band_data['fMHz'].max()
+        band_ranges[band] = (fmin, fmax)
+
+    ylim = ax.get_ylim()
+    for band, (fmin, fmax) in band_ranges.items():
+        ax.axvline(fmin, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+        ax.axvline(fmax, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+        fmid = (fmin + fmax) / 2
+        ax.text(fmid, ylim[0] + (ylim[1] - ylim[0]) * 0.95, band,
+                ha='center', va='top', fontsize=9, fontweight='bold',
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.3))
 
     ax.set_xlabel('Frequency (MHz)', fontsize=12)
     ax.set_ylabel('3rd Harmonic Level (dBc)', fontsize=12)
