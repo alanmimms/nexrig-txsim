@@ -634,6 +634,12 @@ public:
 // Band Definition Structure
 //=============================================================================
 
+struct SubBand {
+  std::string name;
+  double fLow;   // MHz
+  double fHigh;  // MHz
+};
+
 struct BandFilter {
   std::string name;
   double fLow;
@@ -645,6 +651,7 @@ struct BandFilter {
   double c3;  // Farads
   double l3;  // Henries
   double c4;  // Farads
+  std::vector<SubBand> subBands;  // If empty, treat as single band
 
   BandFilter(std::string name,
 	     double fLMHz,
@@ -655,7 +662,8 @@ struct BandFilter {
 	     double c4pF,
 	     double l1nH,
 	     double l2nH,
-	     double l3nH)
+	     double l3nH,
+	     std::vector<SubBand> subs = {})
     : name(name),
       fLow(fLMHz*1.0e6),
       fHigh(fHMHz*1.0e6),
@@ -665,7 +673,8 @@ struct BandFilter {
       l2(l2nH*1.0e-9),
       c3(c3pF*1.0e-12),
       l3(l3nH*1.0e-9),
-      c4(c4pF*1.0e-12)
+      c4(c4pF*1.0e-12),
+      subBands(subs)
   { }
 };
 
@@ -812,49 +821,38 @@ int main(int argc, char* argv[]) {
   std::cout << "========================================\n" << std::endl;
   
   // Band definitions - 7th-order Chebyshev LPF (0.25dB ripple, 200Ω impedance)
-  // BandFilter(name, fLowMHz, fHighMHz, c1pF, c2pF, c3pF, c4pF, l1nH, l2nH, l3nH)
+  // BandFilter(name, fLowMHz, fHighMHz, c1pF, c2pF, c3pF, c4pF, l1nH, l2nH, l3nH, subBands)
   // Prototype: g1=0.9309, g2=1.2243, g3=1.5827, g4=1.6896, g5=1.5827, g6=1.2243, g7=0.9309
-  // C2 and C3 use 2 parallel caps for current sharing
+  // C1=C4 (end caps), C2=C3 (middle caps use 2 parallel for current sharing), L1=L3 (end inductors)
   std::vector<BandFilter> bands = {
-    // 160m: cutoff 2.4MHz
+    // 160m: single band, cutoff 2.6MHz
     BandFilter("160m", 1.8, 2.0,
-               390, 330+360, 330+360, 390,
+               360, 330+300, 330+300, 360,
                18000, 20000, 18000),
 
-    // 80m: cutoff 5.0MHz
-    BandFilter("80m", 3.5, 4.0,
-               180, 150+180, 150+180, 180,
-               9100, 10000, 9100),
+    // 80m+60m merged: cutoff 6.5MHz
+    BandFilter("80m/60m", 3.5, 5.4,
+               150, 150+120, 150+120, 150,
+               7500, 8200, 7500,
+               {{"80m", 3.5, 4.0}, {"60m", 5.3, 5.4}}),
 
-    // 60m: cutoff 6.5MHz
-    BandFilter("60m", 5.3, 5.4,
-               150, 160+110, 160+110, 150,
-               6800, 7500, 6800),
+    // 40m+30m merged: cutoff 12MHz
+    BandFilter("40m/30m", 7.0, 10.15,
+               75, 62+68, 62+68, 75,
+               3900, 4300, 3900,
+               {{"40m", 7.0, 7.3}, {"30m", 10.1, 10.15}}),
 
-    // 40m: cutoff 8.9MHz
-    BandFilter("40m", 7.0, 7.3,
-               110, 91+91, 91+91, 110,
-               5100, 5600, 5100),
-
-    // 30m: cutoff 11.5MHz
-    BandFilter("30m", 10.1, 10.15,
-               82, 75+75, 75+75, 82,
-               3900, 4300, 3900),
-
-    // 20m: cutoff 16MHz
-    BandFilter("20m", 14.0, 14.35,
-               56, 43+56, 43+56, 56,
-               2700, 3000, 2700),
-
-    // 17m/15m: cutoff 24MHz
-    BandFilter("17m/15m", 18.068, 21.45,
+    // 20m+17m+15m merged: cutoff 24MHz
+    BandFilter("20m/17m/15m", 14.0, 21.45,
                39, 33+36, 33+36, 39,
-               1800, 2000, 1800),
+               1800, 2000, 1800,
+               {{"20m", 14.0, 14.35}, {"17m", 18.068, 18.168}, {"15m", 21.0, 21.45}}),
 
-    // 12m/10m: cutoff 32MHz
+    // 12m+10m merged: cutoff 33MHz
     BandFilter("12m/10m", 24.89, 29.7,
-               30, 27+24, 27+24, 30,
-               1500, 1600, 1500),
+               27, 24+27, 24+27, 27,
+               1300, 1500, 1300,
+               {{"12m", 24.89, 24.99}, {"10m", 28.0, 29.7}}),
   };
   
   static const auto Ctol = 0.05;    // +/- 5%
@@ -905,71 +903,9 @@ int main(int argc, char* argv[]) {
       // Create filter with corner values (7th-order)
       ChebyshevLPF filter(C1, C2, C3, C4, L1, L2, L3, ESR, DCR);
 
-      // For combined bands, analyze each sub-band separately
-      if (band.name == "17m/15m") {
-        // 17m band: 18.068-18.168 MHz
-        std::cout << "\n[17m Bottom]" << std::endl;
-        auto m17low = HarmonicAnalyzer::analyze(
-          filter, source, "17m", corner.name, 18.068e6, 10
-        );
-        printResult(m17low);
-        allResults.push_back(m17low);
-
-        std::cout << "\n[17m Top]" << std::endl;
-        auto m17high = HarmonicAnalyzer::analyze(
-          filter, source, "17m", corner.name, 18.168e6, 10
-        );
-        printResult(m17high);
-        allResults.push_back(m17high);
-
-        // 15m band: 21.0-21.45 MHz
-        std::cout << "\n[15m Bottom]" << std::endl;
-        auto m15low = HarmonicAnalyzer::analyze(
-          filter, source, "15m", corner.name, 21.0e6, 10
-        );
-        printResult(m15low);
-        allResults.push_back(m15low);
-
-        std::cout << "\n[15m Top]" << std::endl;
-        auto m15high = HarmonicAnalyzer::analyze(
-          filter, source, "15m", corner.name, 21.45e6, 10
-        );
-        printResult(m15high);
-        allResults.push_back(m15high);
-      }
-      else if (band.name == "12m/10m") {
-        // 12m band: 24.89-24.99 MHz
-        std::cout << "\n[12m Bottom]" << std::endl;
-        auto m12low = HarmonicAnalyzer::analyze(
-          filter, source, "12m", corner.name, 24.89e6, 10
-        );
-        printResult(m12low);
-        allResults.push_back(m12low);
-
-        std::cout << "\n[12m Top]" << std::endl;
-        auto m12high = HarmonicAnalyzer::analyze(
-          filter, source, "12m", corner.name, 24.99e6, 10
-        );
-        printResult(m12high);
-        allResults.push_back(m12high);
-
-        // 10m band: 28.0-29.7 MHz
-        std::cout << "\n[10m Bottom]" << std::endl;
-        auto m10low = HarmonicAnalyzer::analyze(
-          filter, source, "10m", corner.name, 28.0e6, 10
-        );
-        printResult(m10low);
-        allResults.push_back(m10low);
-
-        std::cout << "\n[10m Top]" << std::endl;
-        auto m10high = HarmonicAnalyzer::analyze(
-          filter, source, "10m", corner.name, 29.7e6, 10
-        );
-        printResult(m10high);
-        allResults.push_back(m10high);
-      }
-      else {
-        // Regular bands - analyze bottom and top
+      // Analyze bands: single bands or combined bands with sub-bands
+      if (band.subBands.empty()) {
+        // Single band - analyze bottom and top of overall range
         std::cout << "\n[Bottom of Band]" << std::endl;
         auto low = HarmonicAnalyzer::analyze(
           filter, source, band.name, corner.name, band.fLow, 10
@@ -983,6 +919,23 @@ int main(int argc, char* argv[]) {
         );
         printResult(high);
         allResults.push_back(high);
+      } else {
+        // Combined band - analyze each sub-band separately
+        for (const auto& subBand : band.subBands) {
+          std::cout << "\n[" << subBand.name << " Bottom]" << std::endl;
+          auto low = HarmonicAnalyzer::analyze(
+            filter, source, subBand.name, corner.name, subBand.fLow * 1e6, 10
+          );
+          printResult(low);
+          allResults.push_back(low);
+
+          std::cout << "\n[" << subBand.name << " Top]" << std::endl;
+          auto high = HarmonicAnalyzer::analyze(
+            filter, source, subBand.name, corner.name, subBand.fHigh * 1e6, 10
+          );
+          printResult(high);
+          allResults.push_back(high);
+        }
       }
     }
   }

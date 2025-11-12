@@ -7,7 +7,7 @@ import re
 import sys
 
 # Band definitions from the C++ code
-# Note: 17m/15m and 12m/10m use same filter but analyze separate bands
+# New merged filter design - multiple bands can share one filter
 bands = {
     "160m": {
         "fLow": 1.8, "fHigh": 2.0,
@@ -17,57 +17,57 @@ bands = {
     },
     "80m": {
         "fLow": 3.5, "fHigh": 4.0,
-        "C1pF": 180, "C2pF": 320, "C3pF": 320, "C4pF": 180,
-        "L1uH": 10.0, "L2uH": 15.0, "L3uH": 10.0,
-        "C2C3note": "2x160pF"
+        "C1pF": 160, "C2pF": 270, "C3pF": 270, "C4pF": 160,
+        "L1uH": 7.5, "L2uH": 8.2, "L3uH": 7.5,
+        "C2C3note": "150pF+120pF"
     },
     "60m": {
         "fLow": 5.3, "fHigh": 5.4,
-        "C1pF": 120, "C2pF": 220, "C3pF": 220, "C4pF": 120,
-        "L1uH": 6.8, "L2uH": 10.0, "L3uH": 6.8,
-        "C2C3note": "2x110pF"
+        "C1pF": 160, "C2pF": 270, "C3pF": 270, "C4pF": 160,
+        "L1uH": 7.5, "L2uH": 8.2, "L3uH": 7.5,
+        "C2C3note": "150pF+120pF"
     },
     "40m": {
         "fLow": 7.0, "fHigh": 7.3,
-        "C1pF": 82, "C2pF": 164, "C3pF": 164, "C4pF": 82,
-        "L1uH": 5.6, "L2uH": 8.2, "L3uH": 5.6,
-        "C2C3note": "2x82pF"
+        "C1pF": 82, "C2pF": 150, "C3pF": 150, "C4pF": 82,
+        "L1uH": 4.3, "L2uH": 4.7, "L3uH": 4.3,
+        "C2C3note": "75pF+75pF"
     },
     "30m": {
         "fLow": 10.1, "fHigh": 10.15,
-        "C1pF": 56, "C2pF": 94, "C3pF": 94, "C4pF": 56,
-        "L1uH": 3.9, "L2uH": 5.6, "L3uH": 3.9,
-        "C2C3note": "2x47pF"
+        "C1pF": 82, "C2pF": 150, "C3pF": 150, "C4pF": 82,
+        "L1uH": 4.3, "L2uH": 4.7, "L3uH": 4.3,
+        "C2C3note": "75pF+75pF"
     },
     "20m": {
         "fLow": 14.0, "fHigh": 14.35,
-        "C1pF": 39, "C2pF": 72, "C3pF": 72, "C4pF": 39,
-        "L1uH": 2.7, "L2uH": 3.9, "L3uH": 2.7,
-        "C2C3note": "2x36pF"
+        "C1pF": 39, "C2pF": 69, "C3pF": 69, "C4pF": 39,
+        "L1uH": 2.0, "L2uH": 2.2, "L3uH": 2.0,
+        "C2C3note": "33pF+36pF"
     },
     "17m": {
         "fLow": 18.068, "fHigh": 18.168,
-        "C1pF": 27, "C2pF": 54, "C3pF": 54, "C4pF": 27,
-        "L1uH": 2.0, "L2uH": 2.7, "L3uH": 2.0,
-        "C2C3note": "2x27pF"
+        "C1pF": 39, "C2pF": 69, "C3pF": 69, "C4pF": 39,
+        "L1uH": 2.0, "L2uH": 2.2, "L3uH": 2.0,
+        "C2C3note": "33pF+36pF"
     },
     "15m": {
         "fLow": 21.0, "fHigh": 21.45,
-        "C1pF": 27, "C2pF": 54, "C3pF": 54, "C4pF": 27,
-        "L1uH": 2.0, "L2uH": 2.7, "L3uH": 2.0,
-        "C2C3note": "2x27pF"
+        "C1pF": 39, "C2pF": 69, "C3pF": 69, "C4pF": 39,
+        "L1uH": 2.0, "L2uH": 2.2, "L3uH": 2.0,
+        "C2C3note": "33pF+36pF"
     },
     "12m": {
         "fLow": 24.89, "fHigh": 24.99,
-        "C1pF": 22, "C2pF": 36, "C3pF": 36, "C4pF": 22,
-        "L1uH": 1.5, "L2uH": 2.2, "L3uH": 1.5,
-        "C2C3note": "2x18pF"
+        "C1pF": 27, "C2pF": 51, "C3pF": 51, "C4pF": 27,
+        "L1uH": 1.3, "L2uH": 1.5, "L3uH": 1.3,
+        "C2C3note": "24pF+27pF"
     },
     "10m": {
         "fLow": 28.0, "fHigh": 29.7,
-        "C1pF": 22, "C2pF": 36, "C3pF": 36, "C4pF": 22,
-        "L1uH": 1.5, "L2uH": 2.2, "L3uH": 1.5,
-        "C2C3note": "2x18pF"
+        "C1pF": 27, "C2pF": 51, "C3pF": 51, "C4pF": 27,
+        "L1uH": 1.3, "L2uH": 1.5, "L3uH": 1.3,
+        "C2C3note": "24pF+27pF"
     },
 }
 

@@ -9,6 +9,48 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
 
+def get_filter_mapping():
+    """Map bands to their physical filter names (merged filter design)"""
+    return {
+        '160m': '160m',
+        '80m': '80m/60m',
+        '60m': '80m/60m',
+        '40m': '40m/30m',
+        '30m': '40m/30m',
+        '20m': '20m/17m/15m',
+        '17m': '20m/17m/15m',
+        '15m': '20m/17m/15m',
+        '12m': '12m/10m',
+        '10m': '12m/10m'
+    }
+
+def get_filter_ranges(df_nom):
+    """Extract frequency ranges for each physical filter"""
+    band_to_filter = get_filter_mapping()
+    filter_ranges = {}
+
+    # For each band, find its frequency range
+    for band in df_nom['Band'].unique():
+        band_data = df_nom[df_nom['Band'] == band]
+        fmin = band_data['fMHz'].min()
+        fmax = band_data['fMHz'].max()
+
+        # Map band to its physical filter
+        filter_name = band_to_filter.get(band, band)
+
+        # Update filter range to encompass all bands it covers
+        if filter_name not in filter_ranges:
+            filter_ranges[filter_name] = [fmin, fmax]
+        else:
+            filter_ranges[filter_name][0] = min(filter_ranges[filter_name][0], fmin)
+            filter_ranges[filter_name][1] = max(filter_ranges[filter_name][1], fmax)
+
+    # Convert to tuples and sort by frequency
+    filter_ranges = {k: tuple(v) for k, v in filter_ranges.items()}
+    filter_ranges = dict(sorted(filter_ranges.items(), key=lambda x: x[1][0]))
+
+    return filter_ranges
+
 def load_results(filename='harmonics.csv'):
     """Load analysis results from CSV file"""
     if not Path(filename).exists():
@@ -89,11 +131,12 @@ def plot_insertion_loss(df, output_dir='plots'):
                 color=color,
                 markersize=6)
 
-    # Add vertical lines and labels for band boundaries
-    # Extract band info from nominal corner
+    # Add markers for both individual bands and physical filters
+    # Extract band and filter info from nominal corner
     df_nom = df[df['Corner'] == 'Nominal'].sort_values('fMHz')
-    bands = df_nom['Band'].unique()
 
+    # Get individual band ranges
+    bands = df_nom['Band'].unique()
     band_ranges = {}
     for band in bands:
         band_data = df_nom[df_nom['Band'] == band]
@@ -101,18 +144,28 @@ def plot_insertion_loss(df, output_dir='plots'):
         fmax = band_data['fMHz'].max()
         band_ranges[band] = (fmin, fmax)
 
-    # Draw vertical lines at band boundaries and label regions
+    # Get physical filter ranges
+    filter_ranges = get_filter_ranges(df_nom)
+
     ylim = ax.get_ylim()
-    for i, (band, (fmin, fmax)) in enumerate(band_ranges.items()):
-        # Vertical lines at boundaries
+
+    # Draw individual band boundaries (gray dashed lines, yellow labels at top)
+    for band, (fmin, fmax) in band_ranges.items():
         ax.axvline(fmin, color='gray', linestyle='--', alpha=0.5, linewidth=1)
         ax.axvline(fmax, color='gray', linestyle='--', alpha=0.5, linewidth=1)
-
-        # Band label in the middle
         fmid = (fmin + fmax) / 2
         ax.text(fmid, ylim[0] + (ylim[1] - ylim[0]) * 0.95, band,
                 ha='center', va='top', fontsize=9, fontweight='bold',
                 bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.3))
+
+    # Draw physical filter boundaries (blue solid lines, cyan labels at bottom)
+    for filter_name, (fmin, fmax) in filter_ranges.items():
+        ax.axvline(fmin, color='blue', linestyle='-', alpha=0.7, linewidth=2.5)
+        ax.axvline(fmax, color='blue', linestyle='-', alpha=0.7, linewidth=2.5)
+        fmid = (fmin + fmax) / 2
+        ax.text(fmid, ylim[0] + (ylim[1] - ylim[0]) * 0.05, filter_name,
+                ha='center', va='bottom', fontsize=10, fontweight='bold',
+                bbox=dict(boxstyle='round,pad=0.4', facecolor='cyan', alpha=0.6, edgecolor='blue', linewidth=2))
 
     ax.set_xlabel('Frequency (MHz)', fontsize=12)
     ax.set_ylabel('Insertion Loss (dB)', fontsize=12)
@@ -234,11 +287,12 @@ def plot_filter_dissipation(df, output_dir='plots'):
                 color=color,
                 markersize=6)
 
-    # Add vertical lines and labels for band boundaries
-    # Extract band info from nominal corner
+    # Add markers for both individual bands and physical filters
+    # Extract band and filter info from nominal corner
     df_nom = df[df['Corner'] == 'Nominal'].sort_values('fMHz')
-    bands = df_nom['Band'].unique()
 
+    # Get individual band ranges
+    bands = df_nom['Band'].unique()
     band_ranges = {}
     for band in bands:
         band_data = df_nom[df_nom['Band'] == band]
@@ -246,18 +300,28 @@ def plot_filter_dissipation(df, output_dir='plots'):
         fmax = band_data['fMHz'].max()
         band_ranges[band] = (fmin, fmax)
 
-    # Draw vertical lines at band boundaries and label regions
+    # Get physical filter ranges
+    filter_ranges = get_filter_ranges(df_nom)
+
     ylim = ax.get_ylim()
-    for i, (band, (fmin, fmax)) in enumerate(band_ranges.items()):
-        # Vertical lines at boundaries
+
+    # Draw individual band boundaries (gray dashed lines, yellow labels at top)
+    for band, (fmin, fmax) in band_ranges.items():
         ax.axvline(fmin, color='gray', linestyle='--', alpha=0.5, linewidth=1)
         ax.axvline(fmax, color='gray', linestyle='--', alpha=0.5, linewidth=1)
-
-        # Band label in the middle
         fmid = (fmin + fmax) / 2
         ax.text(fmid, ylim[1] - (ylim[1] - ylim[0]) * 0.05, band,
                 ha='center', va='top', fontsize=9, fontweight='bold',
                 bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.3))
+
+    # Draw physical filter boundaries (blue solid lines, cyan labels at bottom)
+    for filter_name, (fmin, fmax) in filter_ranges.items():
+        ax.axvline(fmin, color='blue', linestyle='-', alpha=0.7, linewidth=2.5)
+        ax.axvline(fmax, color='blue', linestyle='-', alpha=0.7, linewidth=2.5)
+        fmid = (fmin + fmax) / 2
+        ax.text(fmid, ylim[1] - (ylim[1] - ylim[0]) * 0.95, filter_name,
+                ha='center', va='bottom', fontsize=10, fontweight='bold',
+                bbox=dict(boxstyle='round,pad=0.4', facecolor='cyan', alpha=0.6, edgecolor='blue', linewidth=2))
 
     ax.set_xlabel('Frequency (MHz)', fontsize=12)
     ax.set_ylabel('Power Dissipation (mW)', fontsize=12)

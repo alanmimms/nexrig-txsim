@@ -6,3 +6,4 @@ plots/
 full_results.txt
 LPF-specs.csv
 results.txt
+__pycache__/
